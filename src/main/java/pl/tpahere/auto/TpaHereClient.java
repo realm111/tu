@@ -5,6 +5,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Element;
+import net.minecraft.client.gui.ParentElement;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.widget.PressableWidget;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -42,6 +48,11 @@ public class TpaHereClient implements ClientModInitializer {
     private static final Map<String, Long> LAST_SENT = new HashMap<>();
     private static int wait = 0;
     private static boolean inDebug = false;
+
+    // auto-klikanie "Potwierdz" w oknie potwierdzenia teleportu
+    private static Screen lastScreen = null;
+    private static int screenAge = 0;
+    private static boolean screenDone = false;
 
     @Override
     public void onInitializeClient() {
@@ -82,6 +93,7 @@ public class TpaHereClient implements ClientModInitializer {
                 }
             }
             tick(client);
+            tickAutoConfirm(client);
         });
     }
 
@@ -159,6 +171,71 @@ public class TpaHereClient implements ClientModInitializer {
 
         debug("wykryto: " + found + "  <-  " + text);
         onChatter(found);
+    }
+
+    private static void collect(Element el, List<ClickableWidget> out) {
+        if (el instanceof ClickableWidget w) out.add(w);
+        if (el instanceof ParentElement p) {
+            for (Element c : p.children()) collect(c, out);
+        }
+    }
+
+    // Gdy otworzy sie okno "Czy na pewno chcesz przeteleportowac ... do siebie?" - kliknij "Potwierdz"
+    private static void tickAutoConfirm(MinecraftClient client) {
+        Screen s = client.currentScreen;
+        if (s == null) {
+            lastScreen = null;
+            return;
+        }
+        if (s != lastScreen) {
+            lastScreen = s;
+            screenAge = 0;
+            screenDone = false;
+        }
+        if (screenDone || !Config.enabled) return;
+        if (s instanceof TpaHereScreen) {
+            screenDone = true;
+            return;
+        }
+        screenAge++;
+        if (screenAge < 5) return;      // chwila na zbudowanie okna
+        if (screenAge > 60) {           // okno nie wyglada na potwierdzenie - odpuszczamy
+            screenDone = true;
+            return;
+        }
+
+        List<ClickableWidget> widgets = new ArrayList<>();
+        for (Element el : s.children()) collect(el, widgets);
+
+        String title = s.getTitle().getString();
+        boolean teleportText = title.toLowerCase(Locale.ROOT).contains("teleport");
+        PressableWidget confirm = null;
+        StringBuilder dump = new StringBuilder(title);
+        for (ClickableWidget w : widgets) {
+            String t = w.getMessage().getString();
+            String low = t.toLowerCase(Locale.ROOT);
+            if (!t.isEmpty()) dump.append(" | ").append(t);
+            if (low.contains("teleport")) teleportText = true;
+            if (confirm == null && w instanceof PressableWidget pw && w.active
+                    && (low.contains("potwierd") || low.contains("confirm"))) {
+                confirm = pw;
+            }
+        }
+        if (confirm == null) return;    // moze jeszcze sie nie zbudowalo - probujemy dalej
+
+        screenDone = true;
+        if (!teleportText) {
+            String d = dump.toString();
+            debug("nie klikam (brak slowa 'teleport' w oknie): " + (d.length() > 200 ? d.substring(0, 200) : d));
+            return;
+        }
+        try {
+            confirm.onPress(new KeyInput(GLFW.GLFW_KEY_ENTER, 0, 0));
+            debug("kliknieto Potwierdz");
+        } catch (Exception e) {
+            LOGGER.warn("Blad klikania Potwierdz", e);
+            debug("BLAD klikania Potwierdz: " + e);
+        }
     }
 
     private static boolean keepChar(char c) {
