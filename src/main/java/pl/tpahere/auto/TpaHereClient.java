@@ -102,6 +102,8 @@ public class TpaHereClient implements ClientModInitializer {
         if (!Config.enabled || text == null) return;
         // nie reaguj na wlasne komunikaty debug (to powodowalo nieskonczona petle i crash)
         if (inDebug || text.startsWith("[TPAHere]")) return;
+        // usun kody kolorow typu "§f", "§r" (serwery czesto wysylaja je w tekscie)
+        text = text.replaceAll("(?i)\u00A7[0-9A-FK-OR]", "");
         MinecraftClient mc = MinecraftClient.getInstance();
 
         int cut = -1;
