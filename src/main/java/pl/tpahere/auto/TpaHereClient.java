@@ -169,16 +169,27 @@ public class TpaHereClient implements ClientModInitializer {
         }
         MinecraftClient mc = MinecraftClient.getInstance();
         String self = mc.getSession().getUsername();
-        if (self != null && self.equalsIgnoreCase(name)) return;
+        if (self != null && self.equalsIgnoreCase(name)) {
+            debug("pominieto (to Ty): " + name);
+            return;
+        }
 
         String key = name.toLowerCase(Locale.ROOT);
-        if (QUEUED.contains(key)) return;
+        if (QUEUED.contains(key)) {
+            debug("pominieto (juz w kolejce): " + name);
+            return;
+        }
         Long last = LAST_SENT.get(key);
         long cooldownMs = Config.cooldownMinutes * 60_000L;
-        if (last != null && System.currentTimeMillis() - last < cooldownMs) return;
+        if (last != null && System.currentTimeMillis() - last < cooldownMs) {
+            long left = (cooldownMs - (System.currentTimeMillis() - last)) / 1000;
+            debug("pominieto (cooldown, jeszcze " + left + " s): " + name);
+            return;
+        }
 
         QUEUE.add(name);
         QUEUED.add(key);
+        debug("dodano do kolejki: " + name + " (w kolejce: " + QUEUE.size() + ")");
     }
 
     private static void tick(MinecraftClient client) {
@@ -198,8 +209,13 @@ public class TpaHereClient implements ClientModInitializer {
         if (name == null) return;
         QUEUED.remove(name.toLowerCase(Locale.ROOT));
         LAST_SENT.put(name.toLowerCase(Locale.ROOT), System.currentTimeMillis());
-        client.getNetworkHandler().sendChatCommand("tpahere " + name);
-        debug("wyslano /tpahere " + name);
+        try {
+            client.getNetworkHandler().sendChatCommand("tpahere " + name);
+            debug("wyslano /tpahere " + name);
+        } catch (Exception e) {
+            LOGGER.warn("Blad wysylania komendy", e);
+            debug("BLAD wysylania /tpahere " + name + ": " + e);
+        }
         wait = Config.delaySeconds * 20;
     }
 }
