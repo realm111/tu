@@ -118,13 +118,15 @@ public class TpaHereClient implements ClientModInitializer {
         String prefix = text.substring(0, cut).trim();
         if (prefix.isEmpty()) return;
 
-        // slowa oddzielone spacjami; z kazdego odcinamy ewentualny tag rangi na poczatku, np. "[VIP]Nick"
+        // slowa oddzielone spacjami; z kazdego odcinamy tag rangi, np. "[VIP]Nick", oraz symbole na brzegach
         String[] words = prefix.split("\\s+");
         List<String> cleaned = new ArrayList<>();
         for (String w : words) {
             int k = Math.max(w.lastIndexOf(']'), w.lastIndexOf(')'));
-            cleaned.add(k >= 0 ? w.substring(k + 1) : w);
+            String c = core(k >= 0 ? w.substring(k + 1) : w);
+            if (!c.isEmpty()) cleaned.add(c); // slowa z samych symboli (ikony rang itp.) ignorujemy
         }
+        if (cleaned.isEmpty()) return;
 
         String found = null;
 
@@ -147,7 +149,7 @@ public class TpaHereClient implements ClientModInitializer {
         if (found == null) {
             String last = cleaned.get(cleaned.size() - 1);
             if (!isValidNick(last)) {
-                debug("pominieto (znaki specjalne w nicku): " + last);
+                debug("pominieto (znaki specjalne w nicku): " + last + "  <-  " + text);
                 return;
             }
             found = last;
@@ -155,6 +157,19 @@ public class TpaHereClient implements ClientModInitializer {
 
         debug("wykryto: " + found + "  <-  " + text);
         onChatter(found);
+    }
+
+    private static boolean keepChar(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || c == '_' || c == '.' || c == '-' || c == '*';
+    }
+
+    // usuwa symbole (ikony, nawiasy, interpunkcje) z poczatku i konca slowa
+    private static String core(String w) {
+        int st = 0, en = w.length();
+        while (st < en && !keepChar(w.charAt(st))) st++;
+        while (en > st && !keepChar(w.charAt(en - 1))) en--;
+        return w.substring(st, en);
     }
 
     private static boolean isValidNick(String name) {
