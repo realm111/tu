@@ -224,11 +224,12 @@ public class TpaHereClient implements ClientModInitializer {
         if (confirm == null) return;    // moze jeszcze sie nie zbudowalo - probujemy dalej
 
         screenDone = true;
-        if (!teleportText) {
-            String d = dump.toString();
-            debug("nie klikam (brak slowa 'teleport' w oknie): " + (d.length() > 200 ? d.substring(0, 200) : d));
-            return;
-        }
+            String exact = low.trim();
+            if (confirm == null && w instanceof PressableWidget pw && w.active
+                    && (low.contains("potwierd") || low.contains("confirm")
+                    || exact.equals("tak") || exact.equals("yes"))) {
+                confirm = pw;
+            }
         try {
             confirm.onPress(new KeyInput(GLFW.GLFW_KEY_ENTER, 0, 0));
             debug("kliknieto Potwierdz");
