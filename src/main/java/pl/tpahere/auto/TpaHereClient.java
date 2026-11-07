@@ -41,6 +41,7 @@ public class TpaHereClient implements ClientModInitializer {
     private static final Set<String> QUEUED = new HashSet<>();
     private static final Map<String, Long> LAST_SENT = new HashMap<>();
     private static int wait = 0;
+    private static boolean inDebug = false;
 
     @Override
     public void onInitializeClient() {
@@ -85,15 +86,22 @@ public class TpaHereClient implements ClientModInitializer {
     }
 
     static void debug(String s) {
-        if (!Config.debug) return;
+        if (!Config.debug || inDebug) return;
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player != null) {
-            mc.player.sendMessage(Text.literal("[TPAHere] " + s).formatted(Formatting.GRAY), false);
+            inDebug = true;
+            try {
+                mc.player.sendMessage(Text.literal("[TPAHere] " + s).formatted(Formatting.GRAY), false);
+            } finally {
+                inDebug = false;
+            }
         }
     }
 
     private static void handleText(String text) {
         if (!Config.enabled || text == null) return;
+        // nie reaguj na wlasne komunikaty debug (to powodowalo nieskonczona petle i crash)
+        if (inDebug || text.startsWith("[TPAHere]")) return;
         MinecraftClient mc = MinecraftClient.getInstance();
 
         int cut = -1;
