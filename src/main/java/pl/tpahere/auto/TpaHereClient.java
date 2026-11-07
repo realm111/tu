@@ -24,14 +24,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class TpaHereClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("tpahere");
 
-    // nick Java (3-16 znakow) albo Bedrock z kropka na poczatku
-    private static final Pattern NICK = Pattern.compile("(?<![A-Za-z0-9_])\\.?[A-Za-z0-9_]{3,16}(?![A-Za-z0-9_])");
+    // tylko litery i cyfry (3-16 znakow) - nicki z innymi znakami (np. kropka Bedrock) sa pomijane
+    private static final Pattern NICK = Pattern.compile("[A-Za-z0-9]{3,16}");
     // znaki oddzielajace nick od tresci wiadomosci (np. "Nick: tekst", "Nick » tekst")
     private static final String SEPARATORS = ":>\u00BB\u226B\u203A\u27A4\u279C\u25B6|";
 
@@ -108,39 +107,58 @@ public class TpaHereClient implements ClientModInitializer {
         // wiadomosci prywatne typu "Ty -> Nick" / "Nick -> Ty" pomijamy
         if (text.charAt(cut) == '>' && text.charAt(cut - 1) == '-') return;
 
-        String prefix = text.substring(0, cut);
-        List<String> tokens = new ArrayList<>();
-        Matcher m = NICK.matcher(prefix);
-        while (m.find()) tokens.add(m.group());
-        if (tokens.isEmpty()) return;
+        String prefix = text.substring(0, cut).trim();
+        if (prefix.isEmpty()) return;
+
+        // slowa oddzielone spacjami; z kazdego odcinamy ewentualny tag rangi na poczatku, np. "[VIP]Nick"
+        String[] words = prefix.split("\\s+");
+        List<String> cleaned = new ArrayList<>();
+        for (String w : words) {
+            int k = Math.max(w.lastIndexOf(']'), w.lastIndexOf(')'));
+            cleaned.add(k >= 0 ? w.substring(k + 1) : w);
+        }
 
         String found = null;
 
-        // 1) preferuj nick, ktory jest na liscie graczy
+        // 1) preferuj poprawny nick, ktory jest na liscie graczy
         if (mc.getNetworkHandler() != null) {
             Set<String> online = new HashSet<>();
             for (PlayerListEntry e : mc.getNetworkHandler().getPlayerList()) {
                 String n = e.getProfile().name();
                 if (n != null) online.add(n.toLowerCase(Locale.ROOT));
             }
-            for (int i = tokens.size() - 1; i >= 0; i--) {
-                if (online.contains(tokens.get(i).toLowerCase(Locale.ROOT))) {
-                    found = tokens.get(i);
+            for (int i = cleaned.size() - 1; i >= 0; i--) {
+                String c = cleaned.get(i);
+                if (isValidNick(c) && online.contains(c.toLowerCase(Locale.ROOT))) {
+                    found = c;
                     break;
                 }
             }
         }
-        // 2) jesli lista graczy jest ukryta/niepelna - bierz ostatnie slowo przed separatorem (ranga jest przed nickiem)
+        // 2) w przeciwnym razie ostatnie slowo przed separatorem (ranga jest przed nickiem)
         if (found == null) {
-            found = tokens.get(tokens.size() - 1);
+            String last = cleaned.get(cleaned.size() - 1);
+            if (!isValidNick(last)) {
+                debug("pominieto (znaki specjalne w nicku): " + last);
+                return;
+            }
+            found = last;
         }
 
         debug("wykryto: " + found + "  <-  " + text);
         onChatter(found);
     }
 
+    private static boolean isValidNick(String name) {
+        return name != null && NICK.matcher(name).matches();
+    }
+
     private static void onChatter(String name) {
         if (!Config.enabled || name == null) return;
+        if (!isValidNick(name)) {
+            debug("pominieto (znaki specjalne w nicku): " + name);
+            return;
+        }
         MinecraftClient mc = MinecraftClient.getInstance();
         String self = mc.getSession().getUsername();
         if (self != null && self.equalsIgnoreCase(name)) return;
