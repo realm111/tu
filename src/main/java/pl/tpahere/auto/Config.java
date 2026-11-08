@@ -30,6 +30,9 @@ public class Config {
     public static boolean tracersLabels = true;
     public static boolean nametags = false;
     public static boolean esp = false;
+
+    // Donut
+    public static boolean fakePay = false;
     public static boolean tracersFromBottom = false;
     public static int tracersRange = 128;
 
@@ -46,6 +49,7 @@ public class Config {
         boolean tracersLabels = true;
         boolean nametags = false;
         boolean esp = false;
+        boolean fakePay = false;
         boolean tracersFromBottom = false;
         int tracersRange = 128;
     }
@@ -68,6 +72,7 @@ public class Config {
                         tracersLabels = d.tracersLabels;
                         nametags = d.nametags;
                         esp = d.esp;
+                        fakePay = d.fakePay;
                         tracersFromBottom = d.tracersFromBottom;
                         tracersRange = Math.max(8, Math.min(512, d.tracersRange));
                     }
@@ -93,6 +98,7 @@ public class Config {
             d.tracersLabels = tracersLabels;
             d.nametags = nametags;
             d.esp = esp;
+            d.fakePay = fakePay;
             d.tracersFromBottom = tracersFromBottom;
             d.tracersRange = tracersRange;
             try (Writer w = Files.newBufferedWriter(FILE)) {
