@@ -28,6 +28,8 @@ public class Config {
     // Visuals
     public static boolean tracers = false;
     public static boolean tracersLabels = true;
+    public static boolean nametags = false;
+    public static boolean esp = false;
     public static boolean tracersFromBottom = false;
     public static int tracersRange = 128;
 
@@ -42,6 +44,8 @@ public class Config {
         int totemDelayTicks = 4;
         boolean tracers = false;
         boolean tracersLabels = true;
+        boolean nametags = false;
+        boolean esp = false;
         boolean tracersFromBottom = false;
         int tracersRange = 128;
     }
@@ -62,6 +66,8 @@ public class Config {
                         totemDelayTicks = Math.max(1, Math.min(40, d.totemDelayTicks));
                         tracers = d.tracers;
                         tracersLabels = d.tracersLabels;
+                        nametags = d.nametags;
+                        esp = d.esp;
                         tracersFromBottom = d.tracersFromBottom;
                         tracersRange = Math.max(8, Math.min(512, d.tracersRange));
                     }
@@ -85,6 +91,8 @@ public class Config {
             d.totemDelayTicks = totemDelayTicks;
             d.tracers = tracers;
             d.tracersLabels = tracersLabels;
+            d.nametags = nametags;
+            d.esp = esp;
             d.tracersFromBottom = tracersFromBottom;
             d.tracersRange = tracersRange;
             try (Writer w = Files.newBufferedWriter(FILE)) {
