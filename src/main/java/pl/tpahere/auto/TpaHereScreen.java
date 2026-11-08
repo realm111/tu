@@ -30,7 +30,7 @@ public class TpaHereScreen extends Screen {
     private static final int SECTION = 0xFF4ADE80;
     private static final int DARK_TEXT = 0xFF05130A;
 
-    private static int tab = 0; // 0 = TPA, 1 = Totem, 2 = Visuals
+    private static int tab = 0; // 0 = TPA, 1 = Totem, 2 = Visuals, 3 = Donut
 
     public TpaHereScreen() {
         super(Text.literal("TPAHere"));
@@ -53,7 +53,7 @@ public class TpaHereScreen extends Screen {
 
         addDrawableChild(new Choice(l + PW - 28, t + 8, 18, 18, "X", () -> false, this::close));
 
-        String[] names = {"TPA", "Totem", "Visuals"};
+        String[] names = {"TPA", "Totem", "Visuals", "Donut"};
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             addDrawableChild(new Choice(cx + i * 66, t + 50, 62, 18, names[i], () -> tab == idx, () -> {
@@ -127,7 +127,7 @@ public class TpaHereScreen extends Screen {
                 Config.tracersFromBottom = true;
                 Config.save();
             }));
-        } else {
+        } else if (tab == 1) {
             addDrawableChild(new Toggle(cx, t + 82, cw, 22, "Auto Totem",
                     () -> Config.autoTotem, () -> {
                 Config.autoTotem = !Config.autoTotem;
@@ -145,6 +145,12 @@ public class TpaHereScreen extends Screen {
                         Config.totemDelayTicks = v;
                         Config.save();
                     });
+        } else {
+            addDrawableChild(new Toggle(cx, t + 82, cw, 22, "Symulacja /pay (tylko lokalnie)",
+                    () -> Config.fakePay, () -> {
+                Config.fakePay = !Config.fakePay;
+                Config.save();
+            }));
         }
     }
 
@@ -191,10 +197,16 @@ public class TpaHereScreen extends Screen {
         } else if (tab == 2) {
             context.drawTextWithShadow(tr, Text.literal("ZAS\u0118G"), cx, t + 164, SECTION);
             context.drawTextWithShadow(tr, Text.literal("START LINII"), cx, t + 202, SECTION);
-        } else {
+        } else if (tab == 1) {
             context.drawTextWithShadow(tr, Text.literal("OP\u00d3\u0179NIENIE AKCJI"), cx, t + 138, SECTION);
             context.drawTextWithShadow(tr, Text.literal("Zak\u0142ada totem z ekwipunku, gdy nie masz"), cx, t + 182, MUTED);
             context.drawTextWithShadow(tr, Text.literal("go w \u017cadnej r\u0119ce."), cx, t + 194, MUTED);
+        } else {
+            context.drawTextWithShadow(tr, Text.literal("SYMULACJA /PAY"), cx, t + 116, SECTION);
+            context.drawTextWithShadow(tr, Text.literal("Gdy w\u0142\u0105czone, /pay nick kwota nie idzie"), cx, t + 130, MUTED);
+            context.drawTextWithShadow(tr, Text.literal("na serwer. Pokazuje si\u0119 tylko u ciebie"), cx, t + 142, MUTED);
+            context.drawTextWithShadow(tr, Text.literal("niebieski komunikat z prefiksem [TPAHere]."), cx, t + 154, MUTED);
+            context.drawTextWithShadow(tr, Text.literal("Uwaga: prawdziwy /pay wtedy nie dzia\u0142a."), cx, t + 174, MUTED);
         }
 
         context.drawCenteredTextWithShadow(tr, Text.literal("Prawy Shift \u2014 otw\u00f3rz menu"), l + PW / 2, t + PH - 16, MUTED);
