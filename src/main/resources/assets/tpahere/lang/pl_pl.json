@@ -12,5 +12,7 @@
   "tpahere.debug": "Debug (pokaż wykryte nicki): %s",
   "tpahere.close": "Zamknij",
   "tpahere.chat_on": "TPAHere Auto: WŁĄCZONY",
-  "tpahere.chat_off": "TPAHere Auto: WYŁĄCZONY"
+  "tpahere.chat_off": "TPAHere Auto: WYŁĄCZONY",
+  "key.tpahere.trigger": "Triggerbot wl/wyl",
+  "key.tpahere.totem": "Auto totem wl/wyl"
 }
