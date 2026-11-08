@@ -12,9 +12,25 @@ import net.minecraft.util.math.Vec3d;
 public class Tracers {
     private static final int PURPLE = 0xFFB04DFF;
     private static final int ESP_FILL = 0x66FFFFFF; // alfa 0x66 = 40% krycia = 60% przezroczystosci
+    private static final int ESP_LINE = 0xFFFFFFFF; // krawedzie hitboxa jak w F3+B
+    private static final double NEAR = 0.05;
 
-    // zostawione, zeby nie zmieniac reszty kodu (nie jest juz potrzebne)
+    // mnoznik FOV (sprint, efekty predkosci itp.) - tak samo jak robi to gra, zeby rzut sie zgadzal
+    private static float fovMul = 1f;
+    private static float lastFovMul = 1f;
+
+    // wywolywane co tick - sledzimy zmiane FOV tak samo jak GameRenderer
     public static void onTick() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        float target = 1f;
+        if (mc.player != null) {
+            boolean first = mc.options.getPerspective().isFirstPerson();
+            float scale = mc.options.getFovEffectScale().getValue().floatValue();
+            target = mc.player.getFovMultiplier(first, scale);
+        }
+        lastFovMul = fovMul;
+        fovMul = fovMul + (target - fovMul) * 0.5f;
+        fovMul = Math.max(0.1f, Math.min(1.5f, fovMul));
     }
 
     private static final class Cam {
@@ -73,8 +89,8 @@ public class Tracers {
         if (self == null || world == null) return;
 
         float delta = tickCounter.getTickProgress(false);
-        Cam cam = new Cam(self, delta, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight(),
-                mc.options.getFov().getValue());
+        double fov = mc.options.getFov().getValue() * (lastFovMul + (fovMul - lastFovMul) * delta);
+        Cam cam = new Cam(self, delta, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight(), fov);
 
         for (AbstractClientPlayerEntity p : world.getPlayers()) {
             if (p == self || p.isSpectator()) continue;
@@ -100,7 +116,7 @@ public class Tracers {
 
         double[] c = cam.toCam(target);
         double ex, ey;
-        if (c[2] > 0.05) {
+        if (c[2] > NEAR) {
             ex = cam.sx(c[0], c[2]);
             ey = cam.sy(c[1], c[2]);
         } else {
@@ -116,16 +132,155 @@ public class Tracers {
             ey = h / 2.0 - yc / len * 10000.0;
         }
 
-        // przytnij linie do ekranu
-        double ddx = ex - ox, ddy = ey - oy;
-        double t = 1.0;
-        if (ex < 0 && ddx != 0) t = Math.min(t, (0 - ox) / ddx);
-        else if (ex > w - 1 && ddx != 0) t = Math.min(t, (w - 1 - ox) / ddx);
-        if (ey < 0 && ddy != 0) t = Math.min(t, (0 - oy) / ddy);
-        else if (ey > h - 1 && ddy != 0) t = Math.min(t, (h - 1 - oy) / ddy);
-        if (t < 0) t = 0;
+        drawClipped(ctx, ox, oy, ex, ey, PURPLE, w, h);
+    }
 
-        line(ctx, ox, oy, ox + ddx * t, oy + ddy * t, PURPLE);
+    // ---------- ESP (hitbox jak F3+B) ----------
+
+    private static void drawEsp(DrawContext ctx, Cam cam, Vec3d pos, double half, double height) {
+        // 8 rogow hitboxa w ukladzie kamery; bity: 1 = X, 2 = Y, 4 = Z
+        double[][] c = new double[8][];
+        boolean allFront = true;
+        for (int i = 0; i < 8; i++) {
+            Vec3d corner = new Vec3d(
+                    pos.x + ((i & 1) == 0 ? -half : half),
+                    pos.y + ((i & 2) == 0 ? 0 : height),
+                    pos.z + ((i & 4) == 0 ? -half : half));
+            c[i] = cam.toCam(corner);
+            if (c[i][2] <= NEAR) allFront = false;
+        }
+
+        // 12 krawedzi (pary rogow roznace sie jednym bitem)
+        int[][] edges = new int[12][2];
+        int n = 0;
+        for (int i = 0; i < 8; i++) {
+            for (int bit = 1; bit <= 4; bit <<= 1) {
+                if ((i & bit) == 0) {
+                    edges[n][0] = i;
+                    edges[n][1] = i | bit;
+                    n++;
+                }
+            }
+        }
+
+        // polprzezroczyste wypelnienie sylwetki (tylko gdy caly hitbox jest przed kamera)
+        if (allFront) {
+            double[] sxs = new double[8], sys = new double[8];
+            double minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+            for (int i = 0; i < 8; i++) {
+                sxs[i] = cam.sx(c[i][0], c[i][2]);
+                sys[i] = cam.sy(c[i][1], c[i][2]);
+                minY = Math.min(minY, sys[i]);
+                maxY = Math.max(maxY, sys[i]);
+            }
+            int y0 = (int) Math.max(0, Math.floor(minY));
+            int y1 = (int) Math.min(cam.h - 1, Math.ceil(maxY));
+            for (int y = y0; y <= y1; y++) {
+                double yc = y + 0.5;
+                double xl = Double.MAX_VALUE, xr = -Double.MAX_VALUE;
+                for (int e = 0; e < 12; e++) {
+                    int a = edges[e][0], b = edges[e][1];
+                    double ay = sys[a], by = sys[b];
+                    if ((ay <= yc && yc < by) || (by <= yc && yc < ay)) {
+                        double x = sxs[a] + (yc - ay) * (sxs[b] - sxs[a]) / (by - ay);
+                        xl = Math.min(xl, x);
+                        xr = Math.max(xr, x);
+                    }
+                }
+                if (xl < xr) {
+                    int fx0 = (int) Math.max(0, Math.round(xl));
+                    int fx1 = (int) Math.min(cam.w, Math.round(xr));
+                    if (fx1 > fx0) ctx.fill(fx0, y, fx1, y + 1, ESP_FILL);
+                }
+            }
+        }
+
+        // krawedzie hitboxa
+        for (int e = 0; e < 12; e++) {
+            double[] a = c[edges[e][0]];
+            double[] b = c[edges[e][1]];
+            if (a[2] <= NEAR && b[2] <= NEAR) continue;
+            // przytnij do plaszczyzny bliskiej, zeby nic nie "uciekalo" przy krawedzi ekranu
+            if (a[2] <= NEAR) a = toNear(a, b);
+            else if (b[2] <= NEAR) b = toNear(b, a);
+            drawClipped(ctx, cam.sx(a[0], a[2]), cam.sy(a[1], a[2]),
+                    cam.sx(b[0], b[2]), cam.sy(b[1], b[2]), ESP_LINE, cam.w, cam.h);
+        }
+    }
+
+    // punkt na odcinku from->to lezacy na plaszczyznie bliskiej (from jest za kamera)
+    private static double[] toNear(double[] from, double[] to) {
+        double t = (NEAR - from[2]) / (to[2] - from[2]);
+        return new double[]{
+                from[0] + (to[0] - from[0]) * t,
+                from[1] + (to[1] - from[1]) * t,
+                NEAR
+        };
+    }
+
+    // ---------- NAMETAG ----------
+
+    private static void drawNametag(DrawContext ctx, MinecraftClient mc, Cam cam, AbstractClientPlayerEntity p, Vec3d anchor) {
+        double[] c = cam.toCam(anchor);
+        if (c[2] <= NEAR) return;
+        int sx = (int) Math.round(cam.sx(c[0], c[2]));
+        int sy = (int) Math.round(cam.sy(c[1], c[2]));
+        if (sx < -200 || sx > cam.w + 200 || sy < -50 || sy > cam.h + 50) return;
+
+        TextRenderer tr = mc.textRenderer;
+        String nick = p.getName().getString();
+        float hp = Math.max(0f, p.getHealth() + p.getAbsorptionAmount());
+        float maxHp = Math.max(1f, p.getMaxHealth());
+        String hpText = String.valueOf((int) Math.ceil(hp));
+
+        int nickW = tr.getWidth(nick);
+        int hpW = tr.getWidth(hpText);
+        int boxW = Math.max(60, nickW + 6 + hpW + 10);
+        int boxH = 22;
+        int x = sx - boxW / 2;
+        int y = sy - boxH;
+
+        ctx.fill(x - 1, y - 1, x + boxW + 1, y + boxH + 1, 0xFFB04DFF); // ramka
+        ctx.fill(x, y, x + boxW, y + boxH, 0xCC101010);                 // tlo
+
+        float ratio = Math.min(1f, hp / maxHp);
+        int rr = (int) (255 * Math.min(1.0, 2.0 * (1.0 - ratio)));
+        int gg = (int) (255 * Math.min(1.0, 2.0 * ratio));
+        int hpColor = 0xFF000000 | (rr << 16) | (gg << 8) | 0x30;
+
+        int textX = sx - (nickW + 6 + hpW) / 2;
+        ctx.drawTextWithShadow(tr, nick, textX, y + 3, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, hpText, textX + nickW + 6, y + 3, hpColor);
+
+        // pasek zdrowia
+        int bx = x + 4, by = y + 14, bw = boxW - 8, bh = 4;
+        ctx.fill(bx, by, bx + bw, by + bh, 0xFF2A2A2A);
+        ctx.fill(bx, by, bx + Math.max(1, Math.round(bw * ratio)), by + bh, hpColor);
+    }
+
+    // ---------- RYSOWANIE LINII ----------
+
+    // linia przycieta do ekranu (Liang-Barsky), zeby nie rysowac po milionie pikseli poza ekranem
+    private static void drawClipped(DrawContext ctx, double x0, double y0, double x1, double y1, int color, int w, int h) {
+        double dx = x1 - x0, dy = y1 - y0;
+        double t0 = 0, t1 = 1;
+        double[] p = {-dx, dx, -dy, dy};
+        double[] q = {x0, (w - 1) - x0, y0, (h - 1) - y0};
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0) {
+                if (q[i] < 0) return;
+            } else {
+                double r = q[i] / p[i];
+                if (p[i] < 0) {
+                    if (r > t1) return;
+                    if (r > t0) t0 = r;
+                } else {
+                    if (r < t0) return;
+                    if (r < t1) t1 = r;
+                }
+            }
+        }
+        line(ctx, x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy, color);
     }
 
     // linia z krotkich odcinkow (mniej wywolan rysowania niz pojedyncze piksele)
@@ -171,72 +326,5 @@ public class Tracers {
             double t = dy == 0 ? 0 : (v - y0) / dy;
             return (int) Math.round(x0 + dx * t);
         }
-    }
-
-    // ---------- ESP ----------
-
-    private static void drawEsp(DrawContext ctx, Cam cam, Vec3d pos, double half, double height) {
-        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
-        for (int i = 0; i < 8; i++) {
-            Vec3d corner = new Vec3d(
-                    pos.x + ((i & 1) == 0 ? -half : half),
-                    pos.y + ((i & 2) == 0 ? 0 : height),
-                    pos.z + ((i & 4) == 0 ? -half : half));
-            double[] c = cam.toCam(corner);
-            if (c[2] <= 0.05) return; // czesc hitboxa za kamera - pomijamy
-            double sx = cam.sx(c[0], c[2]);
-            double sy = cam.sy(c[1], c[2]);
-            minX = Math.min(minX, sx);
-            maxX = Math.max(maxX, sx);
-            minY = Math.min(minY, sy);
-            maxY = Math.max(maxY, sy);
-        }
-        int x0 = (int) Math.max(0, Math.floor(minX));
-        int y0 = (int) Math.max(0, Math.floor(minY));
-        int x1 = (int) Math.min(cam.w, Math.ceil(maxX));
-        int y1 = (int) Math.min(cam.h, Math.ceil(maxY));
-        if (x1 <= x0 || y1 <= y0) return;
-        ctx.fill(x0, y0, x1, y1, ESP_FILL);
-    }
-
-    // ---------- NAMETAG ----------
-
-    private static void drawNametag(DrawContext ctx, MinecraftClient mc, Cam cam, AbstractClientPlayerEntity p, Vec3d anchor) {
-        double[] c = cam.toCam(anchor);
-        if (c[2] <= 0.05) return;
-        int sx = (int) Math.round(cam.sx(c[0], c[2]));
-        int sy = (int) Math.round(cam.sy(c[1], c[2]));
-        if (sx < -200 || sx > cam.w + 200 || sy < -50 || sy > cam.h + 50) return;
-
-        TextRenderer tr = mc.textRenderer;
-        String nick = p.getName().getString();
-        float hp = Math.max(0f, p.getHealth() + p.getAbsorptionAmount());
-        float maxHp = Math.max(1f, p.getMaxHealth());
-        String hpText = String.valueOf((int) Math.ceil(hp));
-
-        int nickW = tr.getWidth(nick);
-        int hpW = tr.getWidth(hpText);
-        int boxW = Math.max(60, nickW + 6 + hpW + 10);
-        int boxH = 22;
-        int x = sx - boxW / 2;
-        int y = sy - boxH;
-
-        ctx.fill(x - 1, y - 1, x + boxW + 1, y + boxH + 1, 0xFFB04DFF); // ramka
-        ctx.fill(x, y, x + boxW, y + boxH, 0xCC101010);                 // tlo
-
-        float ratio = Math.min(1f, hp / maxHp);
-        int rr = (int) (255 * Math.min(1.0, 2.0 * (1.0 - ratio)));
-        int gg = (int) (255 * Math.min(1.0, 2.0 * ratio));
-        int hpColor = 0xFF000000 | (rr << 16) | (gg << 8) | 0x30;
-
-        int textX = sx - (nickW + 6 + hpW) / 2;
-        ctx.drawTextWithShadow(tr, nick, textX, y + 3, 0xFFFFFFFF);
-        ctx.drawTextWithShadow(tr, hpText, textX + nickW + 6, y + 3, hpColor);
-
-        // pasek zdrowia
-        int bx = x + 4, by = y + 14, bw = boxW - 8, bh = 4;
-        ctx.fill(bx, by, bx + bw, by + bh, 0xFF2A2A2A);
-        ctx.fill(bx, by, bx + Math.max(1, Math.round(bw * ratio)), by + bh, hpColor);
     }
 }
