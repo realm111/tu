@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.MinecraftClient;
@@ -46,6 +47,9 @@ public class TpaHereClient implements ClientModInitializer {
     private static final Pattern NICK = Pattern.compile("[A-Za-z0-9]{3,16}");
     // znaki oddzielajace nick od tresci wiadomosci (np. "Nick: tekst", "Nick » tekst")
     private static final String SEPARATORS = ":>\u00BB\u226B\u203A\u27A4\u279C\u25B6|";
+
+    // kwota np. 1000, 1.5k, 2m
+    private static final Pattern AMOUNT = Pattern.compile("[0-9][0-9.,]{0,11}[kKmMbBtT]?");
 
     private static KeyBinding openKey;
     private static KeyBinding toggleKey;
@@ -90,6 +94,23 @@ public class TpaHereClient implements ClientModInitializer {
             if (!overlay) {
                 handleText(message.getString());
             }
+        });
+
+        // Donut: symulacja /pay - komunikat tylko lokalny, nic nie idzie na serwer
+        ClientSendMessageEvents.ALLOW_COMMAND.register(command -> {
+            if (!Config.fakePay) return true;
+            String[] a = command.trim().split("\\s+");
+            if (a.length == 0 || !a[0].equalsIgnoreCase("pay")) return true;
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player == null) return true;
+            if (a.length == 3 && a[1].length() <= 16 && AMOUNT.matcher(a[2]).matches()) {
+                mc.player.sendMessage(Text.literal("[TPAHere] You paid " + a[1] + " $" + a[2] + ".")
+                        .formatted(Formatting.BLUE), false);
+            } else {
+                mc.player.sendMessage(Text.literal("[TPAHere] Uzycie: /pay <nick> <kwota>")
+                        .formatted(Formatting.GRAY), false);
+            }
+            return false; // nie wysylaj komendy na serwer
         });
 
         // Tracers - rysowane na HUD przed czatem
