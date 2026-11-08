@@ -25,6 +25,12 @@ public class Config {
     public static boolean totemOpenInventory = true;
     public static int totemDelayTicks = 4;
 
+    // Visuals
+    public static boolean tracers = false;
+    public static boolean tracersLabels = true;
+    public static boolean tracersFromBottom = false;
+    public static int tracersRange = 128;
+
     private static class Data {
         boolean enabled = false;
         boolean autoConfirm = true;
@@ -34,6 +40,10 @@ public class Config {
         boolean autoTotem = false;
         boolean totemOpenInventory = true;
         int totemDelayTicks = 4;
+        boolean tracers = false;
+        boolean tracersLabels = true;
+        boolean tracersFromBottom = false;
+        int tracersRange = 128;
     }
 
     public static void load() {
@@ -50,6 +60,10 @@ public class Config {
                         autoTotem = d.autoTotem;
                         totemOpenInventory = d.totemOpenInventory;
                         totemDelayTicks = Math.max(1, Math.min(40, d.totemDelayTicks));
+                        tracers = d.tracers;
+                        tracersLabels = d.tracersLabels;
+                        tracersFromBottom = d.tracersFromBottom;
+                        tracersRange = Math.max(8, Math.min(512, d.tracersRange));
                     }
                 }
             }
@@ -69,6 +83,10 @@ public class Config {
             d.autoTotem = autoTotem;
             d.totemOpenInventory = totemOpenInventory;
             d.totemDelayTicks = totemDelayTicks;
+            d.tracers = tracers;
+            d.tracersLabels = tracersLabels;
+            d.tracersFromBottom = tracersFromBottom;
+            d.tracersRange = tracersRange;
             try (Writer w = Files.newBufferedWriter(FILE)) {
                 GSON.toJson(d, w);
             }
