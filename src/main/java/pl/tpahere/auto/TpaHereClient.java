@@ -94,7 +94,7 @@ public class TpaHereClient implements ClientModInitializer {
 
         // Tracers - rysowane na HUD przed czatem
         HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.of("tpahere", "tracers"),
-                (context, tickCounter) -> Tracers.render(context));
+                (context, tickCounter) -> Tracers.render(context, tickCounter));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             Tracers.onTick();
