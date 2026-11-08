@@ -9,11 +9,23 @@ import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
 public class Tracers {
     private static final int PURPLE = 0xFFB04DFF;
     private static final int ESP_FILL = 0x66FFFFFF; // alfa 0x66 = 40% krycia = 60% przezroczystosci
     private static final int ESP_LINE = 0xFFFFFFFF; // krawedzie hitboxa jak w F3+B
     private static final double NEAR = 0.05;
+
+    // wygladzanie pozycji graczy (w sekundach): mniejsza wartosc = mniej opoznienia, ale wiecej drgan
+    // 0.00 = wylaczone, 0.05 = lekkie, 0.10 = mocne
+    private static final double SMOOTH_TAU = 0.06;
+    private static final Map<UUID, Vec3d> SMOOTH = new HashMap<>();
+    private static long lastFrameNanos = 0;
 
     // mnoznik FOV (sprint, efekty predkosci itp.) - tak samo jak robi to gra, zeby rzut sie zgadzal
     private static float fovMul = 1f;
@@ -82,7 +94,10 @@ public class Tracers {
     }
 
     public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
-        if (!Config.tracers && !Config.nametags && !Config.esp) return;
+        if (!Config.tracers && !Config.nametags && !Config.esp) {
+            SMOOTH.clear();
+            return;
+        }
         MinecraftClient mc = MinecraftClient.getInstance();
         ClientPlayerEntity self = mc.player;
         ClientWorld world = mc.world;
@@ -92,12 +107,30 @@ public class Tracers {
         double fov = mc.options.getFov().getValue() * (lastFovMul + (fovMul - lastFovMul) * delta);
         Cam cam = new Cam(self, delta, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight(), fov);
 
+        // czas miedzy klatkami - wygladzanie liczone w czasie rzeczywistym, niezaleznie od FPS
+        long now = System.nanoTime();
+        double dt = lastFrameNanos == 0 ? 0.0 : Math.max(0.0, Math.min(0.25, (now - lastFrameNanos) / 1.0E9));
+        lastFrameNanos = now;
+        double alpha = SMOOTH_TAU <= 0 ? 1.0 : 1.0 - Math.exp(-dt / SMOOTH_TAU);
+
+        Set<UUID> seen = new HashSet<>();
         for (AbstractClientPlayerEntity p : world.getPlayers()) {
             if (p == self || p.isSpectator()) continue;
             double dist = p.distanceTo(self);
             if (dist > Config.tracersRange) continue;
 
-            Vec3d pos = p.getLerpedPos(delta);
+            Vec3d target = p.getLerpedPos(delta);
+            UUID id = p.getUuid();
+            Vec3d prev = SMOOTH.get(id);
+            Vec3d pos;
+            if (prev == null || prev.squaredDistanceTo(target) > 16.0) {
+                pos = target; // pierwszy raz albo teleport - bez wygladzania
+            } else {
+                pos = prev.add(target.subtract(prev).multiply(alpha));
+            }
+            SMOOTH.put(id, pos);
+            seen.add(id);
+
             double height = p.getHeight();
             double half = p.getWidth() / 2.0;
 
@@ -105,6 +138,7 @@ public class Tracers {
             if (Config.tracers) drawTracer(ctx, cam, pos.add(0, height / 2.0, 0));
             if (Config.nametags) drawNametag(ctx, mc, cam, p, pos.add(0, height + 0.35, 0));
         }
+        SMOOTH.keySet().retainAll(seen);
     }
 
     // ---------- TRACERS ----------
