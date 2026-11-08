@@ -98,26 +98,31 @@ public class TpaHereScreen extends Screen {
                 Config.tracers = !Config.tracers;
                 Config.save();
             }));
-            addDrawableChild(new Toggle(cx, t + 108, cw, 22, "Poka\u017c nick i odleg\u0142o\u015b\u0107",
-                    () -> Config.tracersLabels, () -> {
-                Config.tracersLabels = !Config.tracersLabels;
+            addDrawableChild(new Toggle(cx, t + 108, cw, 22, "Nametag (nick + HP nad g\u0142ow\u0105)",
+                    () -> Config.nametags, () -> {
+                Config.nametags = !Config.nametags;
+                Config.save();
+            }));
+            addDrawableChild(new Toggle(cx, t + 134, cw, 22, "ESP (hitbox przez \u015bciany)",
+                    () -> Config.esp, () -> {
+                Config.esp = !Config.esp;
                 Config.save();
             }));
 
             int[] ranges = {32, 64, 128, 256};
-            addChoices(cx, t + 150, cw, ranges, v -> v + "m",
+            addChoices(cx, t + 176, cw, ranges, v -> v + "m",
                     v -> Config.tracersRange == v, v -> {
                         Config.tracersRange = v;
                         Config.save();
                     });
 
             int half = (cw - 4) / 2;
-            addDrawableChild(new Choice(cx, t + 188, half, 18, "\u015arodek",
+            addDrawableChild(new Choice(cx, t + 214, half, 18, "\u015arodek",
                     () -> !Config.tracersFromBottom, () -> {
                 Config.tracersFromBottom = false;
                 Config.save();
             }));
-            addDrawableChild(new Choice(cx + half + 4, t + 188, half, 18, "D\u00f3\u0142",
+            addDrawableChild(new Choice(cx + half + 4, t + 214, half, 18, "D\u00f3\u0142",
                     () -> Config.tracersFromBottom, () -> {
                 Config.tracersFromBottom = true;
                 Config.save();
@@ -184,8 +189,8 @@ public class TpaHereScreen extends Screen {
             context.drawTextWithShadow(tr, Text.literal("ODST\u0118P MI\u0118DZY KOMENDAMI"), cx, t + 164, SECTION);
             context.drawTextWithShadow(tr, Text.literal("TEN SAM GRACZ PONOWNIE PO"), cx, t + 202, SECTION);
         } else if (tab == 2) {
-            context.drawTextWithShadow(tr, Text.literal("ZAS\u0118G"), cx, t + 138, SECTION);
-            context.drawTextWithShadow(tr, Text.literal("START LINII"), cx, t + 176, SECTION);
+            context.drawTextWithShadow(tr, Text.literal("ZAS\u0118G"), cx, t + 164, SECTION);
+            context.drawTextWithShadow(tr, Text.literal("START LINII"), cx, t + 202, SECTION);
         } else {
             context.drawTextWithShadow(tr, Text.literal("OP\u00d3\u0179NIENIE AKCJI"), cx, t + 138, SECTION);
             context.drawTextWithShadow(tr, Text.literal("Zak\u0142ada totem z ekwipunku, gdy nie masz"), cx, t + 182, MUTED);
