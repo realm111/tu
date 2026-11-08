@@ -30,7 +30,7 @@ public class TpaHereScreen extends Screen {
     private static final int SECTION = 0xFF4ADE80;
     private static final int DARK_TEXT = 0xFF05130A;
 
-    private static int tab = 0; // 0 = TPA, 1 = Totem
+    private static int tab = 0; // 0 = TPA, 1 = Totem, 2 = Visuals
 
     public TpaHereScreen() {
         super(Text.literal("TPAHere"));
@@ -53,7 +53,7 @@ public class TpaHereScreen extends Screen {
 
         addDrawableChild(new Choice(l + PW - 28, t + 8, 18, 18, "X", () -> false, this::close));
 
-        String[] names = {"TPA", "Totem"};
+        String[] names = {"TPA", "Totem", "Visuals"};
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             addDrawableChild(new Choice(cx + i * 66, t + 50, 62, 18, names[i], () -> tab == idx, () -> {
@@ -92,6 +92,36 @@ public class TpaHereScreen extends Screen {
                         Config.cooldownMinutes = v;
                         Config.save();
                     });
+        } else if (tab == 2) {
+            addDrawableChild(new Toggle(cx, t + 82, cw, 22, "Tracers (fioletowe linie do graczy)",
+                    () -> Config.tracers, () -> {
+                Config.tracers = !Config.tracers;
+                Config.save();
+            }));
+            addDrawableChild(new Toggle(cx, t + 108, cw, 22, "Poka\u017c nick i odleg\u0142o\u015b\u0107",
+                    () -> Config.tracersLabels, () -> {
+                Config.tracersLabels = !Config.tracersLabels;
+                Config.save();
+            }));
+
+            int[] ranges = {32, 64, 128, 256};
+            addChoices(cx, t + 150, cw, ranges, v -> v + "m",
+                    v -> Config.tracersRange == v, v -> {
+                        Config.tracersRange = v;
+                        Config.save();
+                    });
+
+            int half = (cw - 4) / 2;
+            addDrawableChild(new Choice(cx, t + 188, half, 18, "\u015arodek",
+                    () -> !Config.tracersFromBottom, () -> {
+                Config.tracersFromBottom = false;
+                Config.save();
+            }));
+            addDrawableChild(new Choice(cx + half + 4, t + 188, half, 18, "D\u00f3\u0142",
+                    () -> Config.tracersFromBottom, () -> {
+                Config.tracersFromBottom = true;
+                Config.save();
+            }));
         } else {
             addDrawableChild(new Toggle(cx, t + 82, cw, 22, "Auto Totem",
                     () -> Config.autoTotem, () -> {
@@ -153,6 +183,9 @@ public class TpaHereScreen extends Screen {
         if (tab == 0) {
             context.drawTextWithShadow(tr, Text.literal("ODST\u0118P MI\u0118DZY KOMENDAMI"), cx, t + 164, SECTION);
             context.drawTextWithShadow(tr, Text.literal("TEN SAM GRACZ PONOWNIE PO"), cx, t + 202, SECTION);
+        } else if (tab == 2) {
+            context.drawTextWithShadow(tr, Text.literal("ZAS\u0118G"), cx, t + 138, SECTION);
+            context.drawTextWithShadow(tr, Text.literal("START LINII"), cx, t + 176, SECTION);
         } else {
             context.drawTextWithShadow(tr, Text.literal("OP\u00d3\u0179NIENIE AKCJI"), cx, t + 138, SECTION);
             context.drawTextWithShadow(tr, Text.literal("Zak\u0142ada totem z ekwipunku, gdy nie masz"), cx, t + 182, MUTED);
