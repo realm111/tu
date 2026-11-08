@@ -8,12 +8,17 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.ParentElement;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.PressableWidget;
 import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.Items;
+import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
@@ -49,6 +54,11 @@ public class TpaHereClient implements ClientModInitializer {
     private static int wait = 0;
     private static boolean inDebug = false;
 
+    // auto totem
+    private static int totemStage = 0;   // 0 = nic, 1 = czekam na ekwipunek, 2 = czekam na zamkniecie
+    private static int totemTimer = 0;
+    private static int totemCooldown = 0;
+
     // auto-klikanie "Potwierdz" w oknie potwierdzenia teleportu
     private static Screen lastScreen = null;
     private static int screenAge = 0;
@@ -60,7 +70,7 @@ public class TpaHereClient implements ClientModInitializer {
 
         KeyBinding.Category category = KeyBinding.Category.create(Identifier.of("tpahere", "main"));
         openKey = KeyBindingHelper.registerKeyBinding(
-                new KeyBinding("key.tpahere.open_gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
+                new KeyBinding("key.tpahere.open_gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, category));
         toggleKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.tpahere.toggle", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
 
@@ -94,6 +104,7 @@ public class TpaHereClient implements ClientModInitializer {
             }
             tick(client);
             tickAutoConfirm(client);
+            tickTotem(client);
         });
     }
 
@@ -173,6 +184,72 @@ public class TpaHereClient implements ClientModInitializer {
         onChatter(found);
     }
 
+    // ---------- AUTO TOTEM ----------
+
+    // numer slotu w ekwipunku gracza (w ekranie) z totemem albo -1
+    private static int findTotemSlot(ClientPlayerEntity p) {
+        PlayerInventory inv = p.getInventory();
+        for (int i = 9; i < 36; i++) {
+            if (inv.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) return i;
+        }
+        for (int i = 0; i < 9; i++) {
+            if (inv.getStack(i).isOf(Items.TOTEM_OF_UNDYING)) return 36 + i;
+        }
+        return -1;
+    }
+
+    private static boolean swapTotemToOffhand(MinecraftClient client, ClientPlayerEntity p) {
+        int slot = findTotemSlot(p);
+        if (slot < 0 || client.interactionManager == null) return false;
+        client.interactionManager.clickSlot(p.playerScreenHandler.syncId, slot, 40, SlotActionType.SWAP, p);
+        debug("totem: zalozono z slotu " + slot);
+        return true;
+    }
+
+    private static void tickTotem(MinecraftClient client) {
+        ClientPlayerEntity p = client.player;
+        if (!Config.autoTotem || p == null || client.interactionManager == null || !p.isAlive() || p.isCreative()) {
+            totemStage = 0;
+            return;
+        }
+        if (totemCooldown > 0) totemCooldown--;
+
+        // totem dziala w obu rekach - jesli juz go trzymasz, nic nie robimy
+        boolean inHand = p.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)
+                || p.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING);
+
+        Screen cs = client.currentScreen;
+
+        if (totemStage == 0) {
+            if (inHand || totemCooldown > 0) return;
+            if (cs != null && !(cs instanceof InventoryScreen)) return; // nie przeszkadzamy w innych oknach
+            if (findTotemSlot(p) < 0) return;
+
+            if (Config.totemOpenInventory && cs == null) {
+                client.setScreen(new InventoryScreen(p));
+                totemStage = 1;
+                totemTimer = Config.totemDelayTicks;
+            } else {
+                swapTotemToOffhand(client, p);
+                totemCooldown = 10;
+            }
+        } else if (totemStage == 1) {
+            if (!(cs instanceof InventoryScreen)) {
+                totemStage = 0;
+                return;
+            }
+            if (--totemTimer > 0) return;
+            if (!inHand) swapTotemToOffhand(client, p);
+            totemStage = 2;
+            totemTimer = Config.totemDelayTicks;
+        } else {
+            if (--totemTimer > 0) return;
+            if (cs instanceof InventoryScreen) p.closeHandledScreen();
+            totemStage = 0;
+            totemCooldown = 10;
+        }
+    }
+
     private static void collect(Element el, List<ClickableWidget> out) {
         if (el instanceof ClickableWidget w) out.add(w);
         if (el instanceof ParentElement p) {
@@ -180,7 +257,7 @@ public class TpaHereClient implements ClientModInitializer {
         }
     }
 
-    // Gdy otworzy sie okno "Czy na pewno chcesz przeteleportowac ... do siebie?" - kliknij "Potwierdz"
+    // Gdy otworzy sie okno potwierdzenia teleportu ("Potwierdz" albo "Tak") - kliknij je
     private static void tickAutoConfirm(MinecraftClient client) {
         Screen s = client.currentScreen;
         if (s == null) {
@@ -192,7 +269,7 @@ public class TpaHereClient implements ClientModInitializer {
             screenAge = 0;
             screenDone = false;
         }
-        if (screenDone || !Config.enabled) return;
+        if (screenDone || !Config.autoConfirm) return;
         if (s instanceof TpaHereScreen) {
             screenDone = true;
             return;
@@ -209,30 +286,28 @@ public class TpaHereClient implements ClientModInitializer {
 
         String title = s.getTitle().getString();
         boolean teleportText = title.toLowerCase(Locale.ROOT).contains("teleport");
-        PressableWidget confirm = null;   // "Potwierdz" / "Confirm"
-        PressableWidget yes = null;       // "Tak" / "Yes" (tylko w oknie z tekstem o teleporcie)
+        PressableWidget confirm = null;
         StringBuilder dump = new StringBuilder(title);
         for (ClickableWidget w : widgets) {
             String t = w.getMessage().getString();
             String low = t.toLowerCase(Locale.ROOT);
-            String exact = low.trim();
             if (!t.isEmpty()) dump.append(" | ").append(t);
             if (low.contains("teleport")) teleportText = true;
-            if (w instanceof PressableWidget pw && w.active) {
-                if (confirm == null && (low.contains("potwierd") || low.contains("confirm"))) {
-                    confirm = pw;
-                } else if (yes == null && (exact.equals("tak") || exact.equals("yes"))) {
-                    yes = pw;
-                }
+            String exact = low.trim();
+            if (confirm == null && w instanceof PressableWidget pw && w.active
+                    && (low.contains("potwierd") || low.contains("confirm")
+                    || exact.equals("tak") || exact.equals("yes"))) {
+                confirm = pw;
             }
         }
-        // "Tak"/"Yes" klikamy tylko jesli okno dotyczy teleportu, zeby nie potwierdzac przypadkowych okien
-        if (confirm == null && teleportText) confirm = yes;
-
         if (confirm == null) return;    // moze jeszcze sie nie zbudowalo - probujemy dalej
 
         screenDone = true;
-        debug("okno: " + dump);
+        if (!teleportText) {
+            String d = dump.toString();
+            debug("nie klikam (brak slowa 'teleport' w oknie): " + (d.length() > 200 ? d.substring(0, 200) : d));
+            return;
+        }
         try {
             confirm.onPress(new KeyInput(GLFW.GLFW_KEY_ENTER, 0, 0));
             debug("kliknieto Potwierdz");
@@ -316,4 +391,4 @@ public class TpaHereClient implements ClientModInitializer {
         }
         wait = Config.delaySeconds * 20;
     }
-                }
+}
