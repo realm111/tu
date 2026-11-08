@@ -12,5 +12,7 @@
   "tpahere.debug": "Debug (show detected nicks): %s",
   "tpahere.close": "Close",
   "tpahere.chat_on": "TPAHere Auto: ENABLED",
-  "tpahere.chat_off": "TPAHere Auto: DISABLED"
+  "tpahere.chat_off": "TPAHere Auto: DISABLED",
+  "key.tpahere.trigger": "Toggle triggerbot",
+  "key.tpahere.totem": "Toggle auto totem"
 }
