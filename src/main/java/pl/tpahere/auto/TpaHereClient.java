@@ -4,7 +4,6 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.MinecraftClient;
@@ -19,12 +18,16 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.hit.EntityHitResult;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,11 +51,10 @@ public class TpaHereClient implements ClientModInitializer {
     // znaki oddzielajace nick od tresci wiadomosci (np. "Nick: tekst", "Nick » tekst")
     private static final String SEPARATORS = ":>\u00BB\u226B\u203A\u27A4\u279C\u25B6|";
 
-    // kwota np. 1000, 1.5k, 2m
-    private static final Pattern AMOUNT = Pattern.compile("[0-9][0-9.,]{0,11}[kKmMbBtT]?");
-
     private static KeyBinding openKey;
     private static KeyBinding toggleKey;
+    private static KeyBinding triggerKey;
+    private static KeyBinding totemKey;
 
     private static final Deque<String> QUEUE = new ArrayDeque<>();
     private static final Set<String> QUEUED = new HashSet<>();
@@ -79,6 +81,15 @@ public class TpaHereClient implements ClientModInitializer {
                 new KeyBinding("key.tpahere.open_gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, category));
         toggleKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.tpahere.toggle", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_J, category));
+        triggerKey = KeyBindingHelper.registerKeyBinding(
+                new KeyBinding("key.tpahere.trigger", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        totemKey = KeyBindingHelper.registerKeyBinding(
+                new KeyBinding("key.tpahere.totem", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+
+        Binds.add("Otwórz menu", openKey);
+        Binds.add("Auto /tpahere wł/wył", toggleKey);
+        Binds.add("Triggerbot wł/wył", triggerKey);
+        Binds.add("Auto totem wł/wył", totemKey);
 
         // Podpisany czat - znamy nadawce
         ClientReceiveMessageEvents.CHAT.register((message, signed, sender, params, ts) -> {
@@ -94,23 +105,6 @@ public class TpaHereClient implements ClientModInitializer {
             if (!overlay) {
                 handleText(message.getString());
             }
-        });
-
-        // Donut: symulacja /pay - komunikat tylko lokalny, nic nie idzie na serwer
-        ClientSendMessageEvents.ALLOW_COMMAND.register(command -> {
-            if (!Config.fakePay) return true;
-            String[] a = command.trim().split("\\s+");
-            if (a.length == 0 || !a[0].equalsIgnoreCase("pay")) return true;
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc.player == null) return true;
-            if (a.length == 3 && a[1].length() <= 16 && AMOUNT.matcher(a[2]).matches()) {
-                mc.player.sendMessage(Text.literal("[TPAHere] You paid " + a[1] + " $" + a[2] + ".")
-                        .formatted(Formatting.BLUE), false);
-            } else {
-                mc.player.sendMessage(Text.literal("[TPAHere] Uzycie: /pay <nick> <kwota>")
-                        .formatted(Formatting.GRAY), false);
-            }
-            return false; // nie wysylaj komendy na serwer
         });
 
         // Tracers - rysowane na HUD przed czatem
@@ -130,10 +124,57 @@ public class TpaHereClient implements ClientModInitializer {
                             .formatted(Config.enabled ? Formatting.GREEN : Formatting.RED), true);
                 }
             }
+            while (triggerKey.wasPressed()) {
+                Config.triggerbot = !Config.triggerbot;
+                Config.save();
+                flash(client, "Triggerbot", Config.triggerbot);
+            }
+            while (totemKey.wasPressed()) {
+                Config.autoTotem = !Config.autoTotem;
+                Config.save();
+                flash(client, "Auto totem", Config.autoTotem);
+            }
             tick(client);
+            tickTriggerbot(client);
             tickAutoConfirm(client);
             tickTotem(client);
         });
+    }
+
+    public static Text openKeyText() {
+        return openKey.getBoundKeyLocalizedText();
+    }
+
+    private static void flash(MinecraftClient client, String name, boolean on) {
+        if (client.player == null) return;
+        client.player.sendMessage(Text.literal(name + ": " + (on ? "WŁĄCZONY" : "WYŁĄCZONY"))
+                .formatted(on ? Formatting.GREEN : Formatting.RED), true);
+    }
+
+    // ---------- TRIGGERBOT ----------
+
+    private static int trigTimer = 0;
+
+    // bije gracza, ktory jest pod celownikiem
+    private static void tickTriggerbot(MinecraftClient client) {
+        ClientPlayerEntity p = client.player;
+        if (trigTimer > 0) trigTimer--;
+        if (!Config.triggerbot || p == null || client.interactionManager == null) return;
+        if (client.currentScreen != null || !p.isAlive() || p.isSpectator()) return;
+        if (!(client.crosshairTarget instanceof EntityHitResult hit)) return;
+        Entity e = hit.getEntity();
+        if (!(e instanceof PlayerEntity target) || target == p || !target.isAlive() || target.isSpectator()) return;
+
+        if (Config.triggerMode == 1) {
+            // pelny cios - czekaj az pasek ataku sie odnowi
+            if (p.getAttackCooldownProgress(0.5f) < 1.0f) return;
+        } else {
+            // spam - co 2 ticki (ok. 10 klikniec/s)
+            if (trigTimer > 0) return;
+            trigTimer = 2;
+        }
+        client.interactionManager.attackEntity(p, target);
+        p.swingHand(Hand.MAIN_HAND);
     }
 
     static void debug(String s) {
